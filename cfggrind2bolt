@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import subprocess
 import re
 import sys
 import argparse
@@ -462,22 +463,10 @@ def ignore_cfg(cfg):
 	if cfg.name == 'unknown':
 		return True
 
-	if file_name(cfg).endswith('.so'):
-		return True
-	
 	return False
 
 def relative_addr(cfg, node):
 	return hex(node.addr - cfg.addr).split('x')[-1]
-
-def func_name(cfg):
-	return cfg.name.split('::')[-1].split('(')[0]
-
-def file_name(cfg):
-	if '::' not in cfg.name:
-		return ''
-
-	return cfg.name.split('::')[0]
 
 def should_output_calls(node):
 	if node.type != NodeType.BLOCK:
@@ -489,7 +478,7 @@ def bolt_calls_entry(cfg, node):
 	if not should_output_calls(node):
 		return
 
-	func = func_name(cfg)
+	func = cfg.name
 
 	src_addr = relative_addr(cfg, node.instrs[-1])
 
@@ -497,7 +486,7 @@ def bolt_calls_entry(cfg, node):
 		if ignore_cfg(dst_cfg):
 			continue
 
-		print(f'1 {func} {src_addr} 1 {func_name(dst_cfg)} 0 0 {invoked}')
+		print(f'1 {func} {src_addr} 1 {dst_cfg.name} 0 0 {invoked}')
 
 def should_output_edge(edge):
 	if edge.src.type != NodeType.BLOCK:
@@ -514,7 +503,7 @@ def bolt_edge_entry(cfg, edge):
 	if not should_output_edge(edge):
 		return
 
-	func = func_name(cfg)
+	func = cfg.name
 	src = edge.src
 	dst = edge.dst
 
@@ -537,12 +526,20 @@ parser.add_argument('-f', '--function', nargs='*', default=[], help='Filter by f
 parser.add_argument('-i', '--instrs-map', help='Instructions mapping file')
 parser.add_argument('-d', '--cfg-dump', action='store_true', help='CFG dump (default: false)')
 parser.add_argument('-r', '--cfg-dump-dir', default='.', help='Directory where to dump CFGs (default: .)')
-parser.add_argument('-o', '--output', help='Output to a file, instead of standard output')
+parser.add_argument('-b', '--binary-file', help='File to extract mangled function names')
 args = parser.parse_args()
 
 instrs = {}
 cfgs = {}
 stats = []
+
+mangled_functions = {}
+
+nm = subprocess.run(['nm', '--defined-only', args.binary_file], stdout=subprocess.PIPE)
+
+for line in nm.stdout.strip().split(b'\n'):
+	[address, _, name] = line.split(b' ')
+	mangled_functions[int(address,16)] = name.decode("utf-8") 
 
 # Load the instructions map file.
 if args.instrs_map:
@@ -565,10 +562,12 @@ with open(args.input[0]) as f:
 		if match:
 			tmp = match.group(1).split(':')
 			cfg_addr = int(tmp[0], 16)
+			if cfg_addr not in mangled_functions:
+				continue
 			invoked = int(tmp[1]) if len(tmp) > 1 else 0
 
 			cfg = cfgs.setdefault(cfg_addr, CFG(cfg_addr))
-			cfg.name = match.group(2)
+			cfg.name = mangled_functions.get(cfg_addr)
 			if invoked > 0:
 				cfg.invoked = invoked
 
@@ -599,6 +598,9 @@ with open(args.input[0]) as f:
 				tmp = call.split(':')
 
 				call_addr = int(tmp[0], 16)
+				if call_addr not in mangled_functions:
+					continue
+
 				invoked = int(tmp[1]) if len(tmp) > 1 else 0
 
 				called_cfg = cfgs.setdefault(call_addr, CFG(call_addr))
@@ -634,7 +636,6 @@ with open(args.input[0]) as f:
 				edge = cfg.edge(node, dst, True)
 				edge.invoked = int(tmp[1]) if len(tmp) > 1 else 0
 
-out = open(args.output, 'w') if args.output else sys.stdout
 # Build stats
 for cfg_addr in cfgs:
 	cfg = cfgs[cfg_addr]
@@ -651,12 +652,7 @@ for cfg_addr in cfgs:
 	for node in cfg.nodes:
 		bolt_calls_entry(cfg, node)
 
-out = open(args.output, 'w') if args.output else sys.stdout
-
 #if args.stats == 'program':
 #	[]
 #else:
 #	[]
-
-if args.output:
-	out.close()
