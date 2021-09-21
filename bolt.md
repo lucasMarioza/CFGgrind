@@ -37,6 +37,7 @@ If you have used Perf in the previous step, bolt supplies a tool for this conver
   
 ### CFGGrind
 In case you have used CFGGrind, you should use cfggrind2bolt present in this repo root folder
+
     $ cfggrind2bolt -b <executable> cfg.cfg > profile.fdata
   
 ## Optimizing
