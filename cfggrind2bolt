@@ -534,12 +534,25 @@ cfgs = {}
 stats = []
 
 mangled_functions = {}
+name_count = {}
 
 nm = subprocess.run(['nm', '--defined-only', args.binary_file], stdout=subprocess.PIPE)
 
 for line in nm.stdout.strip().split(b'\n'):
 	[address, _, name] = line.split(b' ')
-	mangled_functions[int(address,16)] = name.decode("utf-8") 
+	name_d = name.decode("utf-8")
+	address_i = int(address,16)
+	if name_d not in name_count:
+		mangled_functions[address_i] = name.decode("utf-8") 
+		name_count[name_d] = [1, address_i]
+	else:
+		[count, prev_addr] = name_count[name_d]
+		if count == 1:
+			mangled_functions[prev_addr] = f'{mangled_functions[prev_addr]}/{count}'
+		count += 1
+		mangled_functions[prev_addr] = f'{name_d}/{count}'
+		name_count[name_d] = [count, address_i]
+
 
 # Load the instructions map file.
 if args.instrs_map:
@@ -562,8 +575,8 @@ with open(args.input[0]) as f:
 		if match:
 			tmp = match.group(1).split(':')
 			cfg_addr = int(tmp[0], 16)
-			if cfg_addr not in mangled_functions:
-				continue
+			#if cfg_addr not in mangled_functions:
+				#continue
 			invoked = int(tmp[1]) if len(tmp) > 1 else 0
 
 			cfg = cfgs.setdefault(cfg_addr, CFG(cfg_addr))
@@ -598,8 +611,8 @@ with open(args.input[0]) as f:
 				tmp = call.split(':')
 
 				call_addr = int(tmp[0], 16)
-				if call_addr not in mangled_functions:
-					continue
+				#if call_addr not in mangled_functions:
+					#continue
 
 				invoked = int(tmp[1]) if len(tmp) > 1 else 0
 
