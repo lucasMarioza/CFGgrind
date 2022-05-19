@@ -495,7 +495,9 @@ def should_output_edge(edge):
     if edge.dst.type in (NodeType.ENTRY, NodeType.EXIT, NodeType.HALT):
         return False
 
-    return True
+    if edge.invoked == 0:
+        return False
+
     # if the block tail is a call, the edge does not represent a branch
     if not edge.src.calls:
         return True
@@ -564,7 +566,7 @@ for function in mangled_functions_address:
     if 'l' not in function_type[function]:
         mangled_functions.setdefault(list(mangled_functions_address[function])[0],[]).append((function,function_type[function]))
     else:
-        for i, addr in enumerate(mangled_functions_address[function]):
+        for i, addr in enumerate(sorted(mangled_functions_address[function])):
             mangled_functions.setdefault(addr, []).append((f'{function}/{i+1}',function_type[function]))
 
 # Load the instructions map file.
