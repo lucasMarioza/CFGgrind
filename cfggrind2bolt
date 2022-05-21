@@ -3,6 +3,7 @@
 import subprocess
 import re
 import sys
+import codecs
 import argparse
 from enum import Enum
 
@@ -517,7 +518,7 @@ def should_output_edge(edge):
     if not edge.src.calls:
         return True
 
-def bolt_edge_entry(cfg, edge):
+def bolt_edge_entry(cfg, edge, debug):
     if not should_output_edge(edge):
         return
 
@@ -531,6 +532,11 @@ def bolt_edge_entry(cfg, edge):
 
     print(f'1 {func} {src_addr} 1 {func} {dst_addr} 0 {edge.invoked}')
 
+    if debug:
+        instr = src.instrs[-1]
+        objdump = subprocess.run(['objdump', '-d', args.binary_file, f'--start-address={hex(instr.addr)}', f'--stop-address={hex(instr.addr + instr.size)}'], stdout=subprocess.PIPE)
+        print(codecs.decode(objdump.stdout.strip().split(b'\n')[-1], 'unicode-escape'))
+
 def write_cfg(cfg):
     path = '{}/cfg-{}.dot'.format(args.cfg_dump_dir, hex(cfg.addr))
 
@@ -543,10 +549,12 @@ parser.add_argument('input', nargs=1, help='CFGs file')
 parser.add_argument('-f', '--function', nargs='*', default=[], help='Filter by function name or address')
 parser.add_argument('-i', '--instrs-map', help='Instructions mapping file')
 parser.add_argument('-d', '--cfg-dump', action='store_true', help='CFG dump (default: false)')
+parser.add_argument('-x', '--debug', action='store_true', help='debug (default: false)')
 parser.add_argument('-r', '--cfg-dump-dir', default='.', help='Directory where to dump CFGs (default: .)')
 parser.add_argument('-b', '--binary-file', help='File to extract mangled function names')
 args = parser.parse_args()
 
+debug = args.debug
 instrs = {}
 cfgs = {}
 stats = []
@@ -691,7 +699,7 @@ for cfg_addr in cfgs:
         write_cfg(cfg)
 
     for edge in cfg.edges:
-        bolt_edge_entry(cfg, edge)
+        bolt_edge_entry(cfg, edge, debug)
 
     for node in cfg.nodes:
         bolt_calls_entry(cfg, node)
