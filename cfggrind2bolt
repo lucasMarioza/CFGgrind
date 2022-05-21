@@ -53,6 +53,8 @@ class NodeType(Enum):
 class Node:
     def __init__(self, type, addr = 0):
         self._type = type
+        self.edges_out = []
+        self.edges_in = []
         if addr == 0:
             assert type == NodeType.ENTRY or \
                     type == NodeType.EXIT or \
@@ -91,6 +93,13 @@ class Node:
         self._calls = []
         self._signals = []
         self._indirect = False
+
+    def add_edge_in(self, edge):
+        self.edges_in.append(edge)
+
+        
+    def add_edge_out(self, edge):
+        self.edges_out.append(edge)
 
     @property
     def calls(self):
@@ -169,7 +178,9 @@ class Node:
 class Edge:
     def __init__(self, src, dst, invoked = 0):
         self._src = src
+        src.add_edge_out(self)
         self._dst = dst
+        dst.add_edge_in(self)
         self._invoked = invoked
 
     @property
@@ -495,6 +506,10 @@ def should_output_edge(edge):
     if edge.dst.type in (NodeType.ENTRY, NodeType.EXIT, NodeType.HALT):
         return False
 
+    last_instr = edge.src.instrs[-1]
+    if len(edge.src.edges_out) == 1 and last_instr.addr + last_instr.size == edge.dst.instrs[0].addr:
+        return False
+
     if edge.invoked == 0:
         return False
 
@@ -566,7 +581,7 @@ for function in mangled_functions_address:
     if 'l' not in function_type[function]:
         mangled_functions.setdefault(list(mangled_functions_address[function])[0],[]).append((function,function_type[function]))
     else:
-        for i, addr in enumerate(sorted(mangled_functions_address[function])):
+        for i, addr in enumerate((mangled_functions_address[function])):
             mangled_functions.setdefault(addr, []).append((f'{function}/{i+1}',function_type[function]))
 
 # Load the instructions map file.
